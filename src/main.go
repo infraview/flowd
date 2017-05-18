@@ -98,6 +98,7 @@ func IndexHandler(w http.ResponseWriter, req *http.Request) {
 }
 
 func main() {
+    listenPortArg := flag.String("port", "7777", "Listening port.")
     directionArg := flag.String("direction", "inbound", "Direction of traffic.")
     interfaceArg := flag.String("interface", "eth0", "Network interface to monitor.")
 
@@ -139,5 +140,5 @@ func main() {
 
     go runNetworkAnalyzer(*interfaceArg, hostIP, *directionArg)
     http.HandleFunc("/", IndexHandler)
-    http.ListenAndServe(":7777", nil)
+    http.ListenAndServe(":" + *listenPortArg, nil)
 }

@@ -61,7 +61,7 @@ func runNetworkAnalyzer(networkInterface string, hostIP string, direction string
                 ip, _ := ipLayer.(*layers.IPv4)
                 tcp, _ := tcpLayer.(*layers.TCP)
 
-                if tcp.DstPort < 32768 && direction == "inbound" && hostIP == ip.SrcIP.String() {
+                if tcp.DstPort < 32768 && direction == "outbound" && hostIP == ip.SrcIP.String() {
 
                     srcPort := strconv.Itoa(int(tcp.SrcPort))
                     dstPort := strconv.Itoa(int(tcp.DstPort))
@@ -71,8 +71,14 @@ func runNetworkAnalyzer(networkInterface string, hostIP string, direction string
 
                     var found bool = false
                     for _, add := range flowTable.addressList {
-                        if add["s"] == srcString && add["d"] == dstString {
+                        if add["d"] == dstString {
+                            count, err := strconv.Atoi(add["c"])
+                            if err != nil {
+                                os.Stderr.WriteString("Oops: " + err.Error() + "\n")
+                            }
+
                             add["t"] = strconv.FormatInt(time.Now().Unix(), 10)
+                            add["c"] = strconv.Itoa(count + 1)
                             found = true
                         }
                     }
@@ -82,6 +88,7 @@ func runNetworkAnalyzer(networkInterface string, hostIP string, direction string
                             "t": strconv.FormatInt(time.Now().Unix(), 10),
                             "s": srcString,
                             "d": dstString,
+                            "c": "1",
                         }
                         flowTable.addressList = Append(flowTable.addressList, conn)
                     }
@@ -99,7 +106,7 @@ func IndexHandler(w http.ResponseWriter, req *http.Request) {
 
 func main() {
     listenPortArg := flag.String("port", "7777", "Listening port.")
-    directionArg := flag.String("direction", "inbound", "Direction of traffic.")
+    directionArg := flag.String("direction", "outbound", "Direction of traffic.")
     interfaceArg := flag.String("interface", "eth0", "Network interface to monitor.")
 
     flag.Parse()

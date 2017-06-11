@@ -12,16 +12,33 @@ import (
     "net"
     "net/http"
     "os"
+    "sort"
     "strconv"
     "time"
 )
+
+type Interface interface {
+    Len() int
+    Less(i, j int) bool
+    Swap(i, j int)
+}
+
+type int64Array []int64
+func (s int64Array) Len() int { return len(s) }
+func (s int64Array) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
+func (s int64Array) Less(i, j int) bool { return s[i] > s[j] }
+
 
 type FlowTable struct {
     addressList []map[string]string
 }
 
+type FlowTimeline struct {
+    timeline map[int64]FlowTable
+}
 
-var flowTable *FlowTable
+var flowTable FlowTable
+var flowTimeline *FlowTimeline
 
 func Extend(slice []map[string]string, element map[string]string) []map[string]string {
     n := len(slice)
@@ -61,6 +78,23 @@ func runNetworkAnalyzer(networkInterface string, hostIP string, direction string
                 ip, _ := ipLayer.(*layers.IPv4)
                 tcp, _ := tcpLayer.(*layers.TCP)
 
+                // Save timestamps
+                var keys []int64
+                for k := range flowTimeline.timeline {
+                    keys = append(keys, k)
+                }
+                // Sort timestamps in reverse
+                sort.Sort(int64Array(keys))
+
+                // Find current timestamp
+                currentTimestamp := time.Now().Unix()
+                for _, ts := range keys {
+                    if ts <= currentTimestamp {
+                      currentTimestamp = ts
+                      break
+                    }
+                }
+
                 if tcp.DstPort < 32768 && direction == "outbound" && hostIP == ip.SrcIP.String() {
 
                     srcPort := strconv.Itoa(int(tcp.SrcPort))
@@ -70,7 +104,7 @@ func runNetworkAnalyzer(networkInterface string, hostIP string, direction string
                     dstString := ip.DstIP.String() + ":" + dstPort
 
                     var found bool = false
-                    for _, add := range flowTable.addressList {
+                    for _, add := range flowTimeline.timeline[currentTimestamp].addressList {
                         if add["d"] == dstString {
                             count, err := strconv.Atoi(add["c"])
                             if err != nil {
@@ -90,7 +124,12 @@ func runNetworkAnalyzer(networkInterface string, hostIP string, direction string
                             "d": dstString,
                             "c": "1",
                         }
-                        flowTable.addressList = Append(flowTable.addressList, conn)
+                        // Avoid direct assignment to map key by using
+                        // a temp FlowTable
+                        var tempFlowTable FlowTable
+                        tempFlowTable = flowTimeline.timeline[currentTimestamp]
+                        tempFlowTable.addressList = Append(tempFlowTable.addressList, conn)
+                        flowTimeline.timeline[currentTimestamp] = tempFlowTable
                     }
                 }
             }
@@ -98,8 +137,71 @@ func runNetworkAnalyzer(networkInterface string, hostIP string, direction string
     }
 }
 
+func runManager(refreshTime string, keepCount string) {
+  // Convert keepCount
+  keepCountVal, err := strconv.Atoi(keepCount)
+  if err != nil {
+      os.Stderr.WriteString("Oops: " + err.Error() + "\n")
+  }
+
+  // Convert refreshTime
+  refreshTimeVal, err := strconv.ParseInt(refreshTime, 10, 64)
+  if err != nil {
+      os.Stderr.WriteString("Oops: " + err.Error() + "\n")
+  }
+
+  // Init timeline struct with current timestamp and next one
+  timeNow := time.Now().Unix()
+  timeNext := timeNow + refreshTimeVal
+
+  // Init timeline struct
+  flowTimeline = &FlowTimeline{
+    timeline: map[int64]FlowTable{
+      timeNow: FlowTable{},
+      timeNext: FlowTable{},
+    },
+  }
+
+  // Convert refreshTime to int
+  rtime, err := strconv.Atoi(refreshTime)
+  if err != nil {
+      os.Stderr.WriteString("Oops: " + err.Error() + "\n")
+  }
+
+  // Start ticker
+  ticker := time.NewTicker(time.Second * time.Duration(rtime))
+  for _ = range ticker.C {
+    // Remove oldest timestamp if expired
+    if len(flowTimeline.timeline) >= keepCountVal {
+      delete(flowTimeline.timeline, timeNow)
+      timeNow = timeNow + refreshTimeVal
+    }
+
+    // Add timestamp if needed
+    if len(flowTimeline.timeline) < keepCountVal {
+      timeNext = timeNext + refreshTimeVal
+      flowTimeline.timeline[timeNext] = FlowTable{}
+    }
+  }
+}
+
 func IndexHandler(w http.ResponseWriter, req *http.Request) {
-    data, _ := json.Marshal(flowTable.addressList)
+    var response map[string][]map[string]string
+    response = make(map[string][]map[string]string)
+
+    // Build JSON response
+    for k := range flowTimeline.timeline {
+        response[strconv.FormatInt(k, 10)] = make([]map[string]string, len(flowTimeline.timeline[k].addressList))
+        response[strconv.FormatInt(k, 10)] = flowTimeline.timeline[k].addressList
+    }
+
+    // Convert to JSON
+    data, err := json.Marshal(response)
+    if err != nil {
+        os.Stderr.WriteString("Failed parse timeline: " + err.Error() + "\n")
+    }
+
+    // Send response
     w.Header().Set("Content-Type", "application/json")
     io.WriteString(w, string(data))
 }
@@ -108,6 +210,9 @@ func main() {
     listenPortArg := flag.String("port", "7777", "Listening port.")
     directionArg := flag.String("direction", "outbound", "Direction of traffic.")
     interfaceArg := flag.String("interface", "eth0", "Network interface to monitor.")
+
+    refreshTimeArg := flag.String("refreshTime", "5", "Refresh time in seconds.")
+    keepCountArg := flag.String("keepCount", "5", "Number of timeintervals to keep.")
 
     flag.Parse()
 
@@ -141,11 +246,17 @@ func main() {
     fmt.Println("Got public IP: ", string(res))
     fmt.Println("Using host private IP: ", hostIP)
 
-    flowTable = &FlowTable{
+    flowTable = FlowTable{
         []map[string]string{},
     }
 
+    // Start Manager
+    go runManager(*refreshTimeArg, *keepCountArg)
+
+    // Start Network Analyzer
     go runNetworkAnalyzer(*interfaceArg, hostIP, *directionArg)
+
+    // Start Web Server
     http.HandleFunc("/", IndexHandler)
     http.ListenAndServe(":" + *listenPortArg, nil)
 }

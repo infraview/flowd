@@ -1,46 +1,42 @@
 # flowd
 
+Project forked from: https://github.com/tadasv/flowd
+It works with: https://github.com/mariuscoto/infraview
+
 Flowd is a simple network monitoring service. It captures TCP/IP traffic and keeps track of
 `source -> destination` mappings, which are exposed via HTTP server running on port `7777`.
 
 Sample output:
 
 ```json
-{
-  "10.0.2.15:37745": "128.101.240.215:80",
-  "10.0.2.15:39323": "173.220.95.85:80",
-  "10.0.2.15:44995": "5.153.231.35:80",
-  "10.0.2.15:50510": "128.61.240.89:80",
-  "10.0.2.15:58835": "64.50.233.100:80",
-  "128.101.240.215:80": "10.0.2.15:37745",
-  "128.61.240.89:80": "10.0.2.15:50510",
-  "173.220.95.85:80": "10.0.2.15:39323",
-  "5.153.231.35:80": "10.0.2.15:44995",
-  "64.50.233.100:80": "10.0.2.15:58835"
-}
+[
+  {
+    "d": "91.189.88.149:80",
+    "s": "172.31.46.139:59938",
+    "t": "1497168807"
+  },
+  {
+    "d": "54.205.195.154:80",
+    "s": "172.31.46.139:47796",
+    "t": "1497168807"
+  },
+  {
+    "d": "54.198.110.211:80",
+    "s": "172.31.46.139:33296",
+    "t": "1497168818"
+  },
+  {
+    "d": "91.189.95.15:80",
+    "s": "172.31.46.139:52106",
+    "t": "1497168863"
+  }
+]
 ```
 
-## Running on Docker
+## Build
 
-`docker run -p 7777:7777 --rm --net=host tadasv/flowd`
+`go build src/main.go`
 
-## Running everywhere else
+## Run
 
-`./flowd`
-
-## Developing
-
-To make development easier it comes docker dev shell.
-
-Run `make dev` to start dev environment inside Docker.
-
-Alternatively you will need libpcap-dev and golang to build the code.
-
-## Building
-
-Run `make docker-build` to build `flowd` from source code ussing Docker golang image.
-
-## Creating docker image
-
-- `make docker-build`
-- `make docker-image`
+`go run src/main.go`

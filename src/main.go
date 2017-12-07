@@ -232,18 +232,20 @@ func main() {
         }
     }
 
-    // Get public IP of host
+    // Get public IP of EC2 instance if available
     response, err := http.Get("http://169.254.169.254/latest/meta-data/public-ipv4")
     if err != nil {
         os.Stderr.WriteString("Failed to fetch public IP: " + err.Error() + "\n")
-    }
-    defer response.Body.Close()
-    res, err := ioutil.ReadAll(response.Body)
-    if err != nil {
-        os.Stderr.WriteString("Failed to read response: " + err.Error() + "\n")
+    } else {
+        res, err := ioutil.ReadAll(response.Body)
+        if err != nil {
+            os.Stderr.WriteString("Failed to read response: " + err.Error() + "\n")
+        } else {
+            fmt.Println("Got public IP: ", string(res))
+        }
+        defer response.Body.Close()
     }
 
-    fmt.Println("Got public IP: ", string(res))
     fmt.Println("Using host private IP: ", hostIP)
 
     flowTable = FlowTable{
